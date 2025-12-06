@@ -111,6 +111,34 @@ class File(models.Model):
         """URL to access the file content"""
         if self.blob and self.blob.path:
             from django.conf import settings
+            
+            # Check if using Cloudinary
+            if 'CLOUDINARY_URL' in os.environ or getattr(settings, 'DEFAULT_FILE_STORAGE', '').endswith('MediaCloudinaryStorage'):
+                try:
+                    import cloudinary
+                    from cloudinary.utils import cloudinary_url
+                    
+                    # The blob.path format: blobs/{hash_prefix}/{hash}
+                    # Convert to Cloudinary public_id: secure-vault/blobs/{hash_prefix}_{hash}
+                    blob_path = self.blob.path
+                    if blob_path.startswith('blobs/'):
+                        # Remove 'blobs/' prefix and replace / with _
+                        public_id = blob_path.replace('blobs/', '').replace('/', '_')
+                        # Add folder prefix
+                        public_id = f'secure-vault/blobs/{public_id}'
+                        
+                        # Generate Cloudinary URL
+                        url, options = cloudinary_url(
+                            public_id,
+                            resource_type='auto',
+                            secure=True,
+                        )
+                        return url
+                except (ImportError, Exception):
+                    # Fallback to local URL if Cloudinary fails
+                    pass
+            
+            # Local storage (development)
             return f"{settings.MEDIA_URL}{self.blob.path}"
         return None
     
