@@ -1,0 +1,16 @@
+FROM node:18-alpine
+
+WORKDIR /app
+
+# Install dependencies
+COPY package*.json ./
+RUN npm install --legacy-peer-deps
+
+# Copy project files (will be overridden by volume mount in dev)
+COPY . .
+
+EXPOSE 3000
+
+# Start development server with hot reload
+CMD ["npm", "start"]
+

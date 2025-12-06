@@ -1,0 +1,57 @@
+services:
+  backend:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - backend_storage:/app/media
+      - backend_static:/app/staticfiles
+      - backend_data:/app/data
+    environment:
+      - DJANGO_DEBUG=True
+      - DJANGO_SECRET_KEY=insecure-dev-only-key
+      - CORS_ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+      - TZ=Asia/Kolkata
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    networks:
+      - app-network
+    command: python manage.py runserver 0.0.0.0:8000
+
+  frontend:
+    build: 
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - REACT_APP_API_URL=http://localhost:8000/api
+      - CHOKIDAR_USEPOLLING=true
+      - WATCHPACK_POLLING=true
+      - FAST_REFRESH=true
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - app-network
+    stdin_open: true
+    tty: true
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  backend_storage:
+    driver: local
+  backend_static:
+    driver: local
+  backend_data:
+    driver: local
+
