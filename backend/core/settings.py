@@ -46,9 +46,14 @@ INSTALLED_APPS = [
 ]
 
 # Add Cloudinary storage if CLOUDINARY_URL is set
-if 'CLOUDINARY_URL' in os.environ:
-    INSTALLED_APPS.insert(0, 'cloudinary_storage')
-    INSTALLED_APPS.insert(1, 'cloudinary')
+# Note: We check this at module level, but actual import happens later in settings
+# to avoid import errors if packages aren't installed
+try:
+    if 'CLOUDINARY_URL' in os.environ:
+        INSTALLED_APPS.insert(0, 'cloudinary_storage')
+        INSTALLED_APPS.insert(1, 'cloudinary')
+except:
+    pass
 
 MIDDLEWARE = [
   "django.middleware.security.SecurityMiddleware",
@@ -150,41 +155,45 @@ STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 if 'CLOUDINARY_URL' in os.environ:
     # Production: Use Cloudinary for file storage
     # CLOUDINARY_URL format: cloudinary://api_key:api_secret@cloud_name
-    import cloudinary
-    import cloudinary.uploader
-    import cloudinary.storage
-    from urllib.parse import urlparse
-    
-    # Parse CLOUDINARY_URL if provided, otherwise use individual env vars
-    cloudinary_url = os.environ.get('CLOUDINARY_URL', '')
-    if cloudinary_url:
-        # Parse the URL: cloudinary://api_key:api_secret@cloud_name
-        parsed = urlparse(cloudinary_url)
-        cloud_name = parsed.hostname or os.environ.get('CLOUDINARY_CLOUD_NAME')
-        api_key = parsed.username or os.environ.get('CLOUDINARY_API_KEY')
-        api_secret = parsed.password or os.environ.get('CLOUDINARY_API_SECRET')
+    try:
+        import cloudinary
+        import cloudinary.uploader
+        from urllib.parse import urlparse
         
-        cloudinary.config(
-            cloud_name=cloud_name,
-            api_key=api_key,
-            api_secret=api_secret,
-        )
-    else:
-        # Fallback to individual environment variables
-        cloudinary.config(
-            cloud_name=os.environ.get('CLOUDINARY_CLOUD_NAME'),
-            api_key=os.environ.get('CLOUDINARY_API_KEY'),
-            api_secret=os.environ.get('CLOUDINARY_API_SECRET'),
-        )
-    
-    CLOUDINARY_STORAGE = {
-        'CLOUDINARY_URL': cloudinary_url or os.environ.get('CLOUDINARY_URL', ''),
-        'PREFIX': 'secure-vault',
-    }
-    
-    DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
-    MEDIA_URL = '/media/'
-    MEDIA_ROOT = None  # Not used with Cloudinary
+        # Parse CLOUDINARY_URL if provided, otherwise use individual env vars
+        cloudinary_url = os.environ.get('CLOUDINARY_URL', '')
+        if cloudinary_url:
+            # Parse the URL: cloudinary://api_key:api_secret@cloud_name
+            parsed = urlparse(cloudinary_url)
+            cloud_name = parsed.hostname or os.environ.get('CLOUDINARY_CLOUD_NAME')
+            api_key = parsed.username or os.environ.get('CLOUDINARY_API_KEY')
+            api_secret = parsed.password or os.environ.get('CLOUDINARY_API_SECRET')
+            
+            cloudinary.config(
+                cloud_name=cloud_name,
+                api_key=api_key,
+                api_secret=api_secret,
+            )
+        else:
+            # Fallback to individual environment variables
+            cloudinary.config(
+                cloud_name=os.environ.get('CLOUDINARY_CLOUD_NAME'),
+                api_key=os.environ.get('CLOUDINARY_API_KEY'),
+                api_secret=os.environ.get('CLOUDINARY_API_SECRET'),
+            )
+        
+        CLOUDINARY_STORAGE = {
+            'CLOUDINARY_URL': cloudinary_url or os.environ.get('CLOUDINARY_URL', ''),
+            'PREFIX': 'secure-vault',
+        }
+        
+        DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
+        MEDIA_URL = '/media/'
+        MEDIA_ROOT = None  # Not used with Cloudinary
+    except ImportError:
+        # If cloudinary packages are not installed, fall back to local storage
+        MEDIA_URL = '/media/'
+        MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 else:
     # Development: Use local file storage
     MEDIA_URL = '/media/'
