@@ -989,7 +989,6 @@ For detailed information about all features, see [AllFeatures.md](AllFeatures.md
 
 Once you have prepared the project for submission follow the instructions in the email to submit the project along with the video. 
 
-
 ---
 
 ## 🌍 Production Deployment
