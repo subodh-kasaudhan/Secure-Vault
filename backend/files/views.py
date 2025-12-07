@@ -600,40 +600,58 @@ def download_file(request, file_id):
                 logger.info(f"Downloading file: public_id={public_id}, blob_path={blob_path}, file_type={file_record.file_type}, extension={file_record.extension}")
                 
                 # Determine resource type based on file MIME type or extension
-                # Images should use 'image', documents should use 'raw', PDFs can be either
-                resource_type = 'auto'  # Default fallback
                 file_mime = file_record.file_type.lower() if file_record.file_type else ''
                 file_ext = file_record.extension.lower() if file_record.extension else ''
                 
-                # Determine resource type
-                if file_mime.startswith('image/') or file_ext in ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg', 'webp', 'tiff', 'ico']:
-                    resource_type = 'image'
-                elif file_mime == 'application/pdf' or file_ext == 'pdf':
-                    # PDFs can be stored as 'image' or 'raw' in Cloudinary, try both
-                    resource_type = 'image'  # Try image first for PDFs
+                is_pdf = file_mime == 'application/pdf' or file_ext == 'pdf'
+                is_image = file_mime.startswith('image/') or file_ext in ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg', 'webp', 'tiff', 'ico']
+                
+                # Build the list of resource types to try
+                if is_pdf:
+                    # PDFs uploaded with resource_type='auto' are stored as 'image' in Cloudinary
+                    resource_types_to_try = ['image', 'raw']
+                elif is_image:
+                    resource_types_to_try = ['image', 'auto', 'raw']
                 else:
-                    # Documents, text files, etc. use 'raw'
-                    resource_type = 'raw'
+                    resource_types_to_try = ['raw', 'auto', 'image']
+                    
+                # Images should use 'image', documents should use 'raw', PDFs can be either
+                # resource_type = 'auto'  # Default fallback
+                # Determine resource type
+                # if file_mime.startswith('image/') or file_ext in ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg', 'webp', 'tiff', 'ico']:
+                #     resource_type = 'image'
+                # elif file_mime == 'application/pdf' or file_ext == 'pdf':
+                #     # PDFs can be stored as 'image' or 'raw' in Cloudinary, try both
+                #     resource_type = 'image'  # Try image first for PDFs
+                # else:
+                #     # Documents, text files, etc. use 'raw'
+                #     resource_type = 'raw'
                 
                 # Try resource types in order: determined type -> auto -> image -> raw
-                resource_types_to_try = [resource_type]
-                if resource_type != 'auto':
-                    resource_types_to_try.append('auto')
-                if resource_type not in ['image', 'auto']:
-                    resource_types_to_try.append('image')
-                if resource_type != 'raw':
-                    resource_types_to_try.append('raw')
+                # resource_types_to_try = [resource_type]
+                # if resource_type != 'auto':
+                #     resource_types_to_try.append('auto')
+                # if resource_type not in ['image', 'auto']:
+                #     resource_types_to_try.append('image')
+                # if resource_type != 'raw':
+                #     resource_types_to_try.append('raw')
                 
                 last_error = None
                 for rt in resource_types_to_try:
                     try:
                         logger.info(f"Trying resource_type={rt} for file {file_record.original_filename}")
-                        url, options = cloudinary_url(
-                            public_id,
-                            resource_type=rt,
-                            secure=True,
-                            format='auto' if rt == 'auto' else None,
-                        )
+                        
+                        # Build URL options
+                        url_options = {
+                            'resource_type': rt,
+                            'secure': True,
+                        }
+                        
+                        # PDFs stored as 'image' type need explicit format='pdf' to download correctly
+                        if is_pdf and rt == 'image':
+                            url_options['format'] = 'pdf'
+                        
+                        url, options = cloudinary_url(public_id, **url_options)
                         logger.info(f"Generated Cloudinary URL: {url}")
                         
                         # Fetch the file from Cloudinary
@@ -647,7 +665,6 @@ def download_file(request, file_id):
                         )
                         
                         # Set headers for file download
-                        # Properly encode filename for Content-Disposition header
                         filename_encoded = quote(file_record.original_filename.encode('utf-8'))
                         response['Content-Disposition'] = f'attachment; filename*=UTF-8\'\'{filename_encoded}'
                         content_length = cloudinary_response.headers.get('Content-Length')
