@@ -2,11 +2,14 @@ import os
 import tempfile
 import hashlib
 import shutil
+import logging
+import requests
 from datetime import datetime
 from django.shortcuts import render
 from django.conf import settings
 from django.db import transaction, models
 from django.db.models import Q
+from django.http import StreamingHttpResponse
 from rest_framework import viewsets, status
 from rest_framework.response import Response
 from rest_framework.pagination import PageNumberPagination
@@ -21,6 +24,8 @@ from .validators import (
     FileValidationError
 )
 from .sensitive_scan import analyze_file_for_sensitive_content
+
+logger = logging.getLogger(__name__)
 
 # Create your views here.
 
@@ -564,11 +569,6 @@ def download_file(request, file_id):
     This ensures proper CORS handling and URL resolution
     """
     try:
-        from .models import File
-        from django.http import HttpResponse, Http404
-        import cloudinary
-        from cloudinary.utils import cloudinary_url
-        
         # Get the file record
         try:
             file_record = File.objects.select_related('blob').get(id=file_id)
@@ -580,8 +580,13 @@ def download_file(request, file_id):
         
         # Check if using Cloudinary
         if 'CLOUDINARY_URL' in os.environ or getattr(settings, 'DEFAULT_FILE_STORAGE', '').endswith('MediaCloudinaryStorage'):
+            blob_path = file_record.blob.path
+            public_id = None
+            url = None
+            
             try:
-                blob_path = file_record.blob.path
+                import cloudinary
+                from cloudinary.utils import cloudinary_url
                 
                 # Determine Cloudinary public_id
                 if blob_path.startswith('secure-vault/'):
@@ -602,12 +607,10 @@ def download_file(request, file_id):
                 
                 # Proxy the file through the backend to avoid CORS and access issues
                 # Fetch the file from Cloudinary and stream it to the client
-                import requests
                 cloudinary_response = requests.get(url, stream=True, timeout=30)
                 cloudinary_response.raise_for_status()
                 
                 # Create a streaming response
-                from django.http import StreamingHttpResponse
                 response = StreamingHttpResponse(
                     cloudinary_response.iter_content(chunk_size=8192),
                     content_type=cloudinary_response.headers.get('Content-Type', 'application/octet-stream')
@@ -619,17 +622,13 @@ def download_file(request, file_id):
                 
                 return response
             except requests.RequestException as e:
-                import logging
-                logger = logging.getLogger(__name__)
                 logger.error(f"Cloudinary download failed: {e}, public_id: {public_id}, url: {url}")
                 return Response(
                     {'error': f'Failed to download file from Cloudinary: {str(e)}'}, 
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
             except Exception as e:
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.error(f"Cloudinary URL generation failed: {e}, blob_path: {blob_path}")
+                logger.error(f"Cloudinary URL generation failed: {e}, blob_path: {blob_path}, public_id: {public_id}")
                 return Response(
                     {'error': f'Failed to generate download URL: {str(e)}'}, 
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -641,7 +640,6 @@ def download_file(request, file_id):
                 return Response({'error': 'File not found on server'}, status=status.HTTP_404_NOT_FOUND)
             
             # Open and serve the file
-            from django.http import StreamingHttpResponse
             file_handle = open(file_path, 'rb')
             response = StreamingHttpResponse(
                 file_handle,
@@ -652,6 +650,7 @@ def download_file(request, file_id):
             return response
             
     except Exception as e:
+        logger.error(f"Download endpoint error: {e}", exc_info=True)
         return Response(
             {'error': f'Download failed: {str(e)}'}, 
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
