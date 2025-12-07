@@ -641,11 +641,13 @@ def download_file(request, file_id):
                     try:
                         logger.info(f"Trying resource_type={rt} for file {file_record.original_filename}")
                         
-                        # Generate URL without format parameter - files are stored without extensions
+                        # Generate SIGNED URL for authenticated access
                         url, options = cloudinary_url(
                             public_id,
                             resource_type=rt,
                             secure=True,
+                            sign_url=True,  # This generates an authenticated URL
+                            type='authenticated',  # For restricted assets
                         )
                         logger.info(f"Generated Cloudinary URL: {url}")
                         
@@ -654,7 +656,6 @@ def download_file(request, file_id):
                         cloudinary_response.raise_for_status()
                         
                         # Create a streaming response with correct content type
-                        # Use the stored file_type since Cloudinary may return generic content-type
                         content_type = file_record.file_type or cloudinary_response.headers.get('Content-Type', 'application/octet-stream')
                         
                         response = StreamingHttpResponse(
