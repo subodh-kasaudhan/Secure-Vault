@@ -641,27 +641,25 @@ def download_file(request, file_id):
                     try:
                         logger.info(f"Trying resource_type={rt} for file {file_record.original_filename}")
                         
-                        # Build URL options
-                        url_options = {
-                            'resource_type': rt,
-                            'secure': True,
-                        }
-                        
-                        # PDFs stored as 'image' type need explicit format='pdf' to download correctly
-                        if is_pdf and rt == 'image':
-                            url_options['format'] = 'pdf'
-                        
-                        url, options = cloudinary_url(public_id, **url_options)
+                        # Generate URL without format parameter - files are stored without extensions
+                        url, options = cloudinary_url(
+                            public_id,
+                            resource_type=rt,
+                            secure=True,
+                        )
                         logger.info(f"Generated Cloudinary URL: {url}")
                         
                         # Fetch the file from Cloudinary
                         cloudinary_response = requests.get(url, stream=True, timeout=30)
                         cloudinary_response.raise_for_status()
                         
-                        # Create a streaming response
+                        # Create a streaming response with correct content type
+                        # Use the stored file_type since Cloudinary may return generic content-type
+                        content_type = file_record.file_type or cloudinary_response.headers.get('Content-Type', 'application/octet-stream')
+                        
                         response = StreamingHttpResponse(
                             cloudinary_response.iter_content(chunk_size=8192),
-                            content_type=cloudinary_response.headers.get('Content-Type', file_record.file_type or 'application/octet-stream')
+                            content_type=content_type
                         )
                         
                         # Set headers for file download
