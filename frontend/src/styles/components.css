@@ -120,6 +120,35 @@
   gap: 0.5rem;
 }
 
+.file-filters-apply-button {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: white;
+  background-color: #2563eb;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid transparent;
+  border-radius: 0.375rem;
+  transition: all 0.15s ease-in-out;
+  cursor: pointer;
+}
+
+.file-filters-apply-button:hover:not(:disabled) {
+  background-color: #1d4ed8;
+}
+
+.file-filters-apply-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.file-filters-apply-button:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px #3b82f6;
+}
+
 .file-filters-clear-button {
   font-size: 0.875rem;
   color: #6b7280;
@@ -128,6 +157,10 @@
   gap: 0.25rem;
   border-radius: 0.25rem;
   transition: color 0.15s ease-in-out;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0.25rem 0.5rem;
 }
 
 .file-filters-clear-button:hover {

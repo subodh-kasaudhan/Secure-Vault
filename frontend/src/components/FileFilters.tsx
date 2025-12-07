@@ -103,132 +103,86 @@ export const FileFilters = React.forwardRef<{ clearAllFilters: () => void }, Fil
     setTimeout(() => setValidationError(null), 3000);
   };
 
-  // Handle min size change with validation
+  // Simple handlers without validation (validation happens on Apply button click)
   const handleMinSizeChange = (value: string) => {
     setMinSize(value);
-    // setLastChangedField('minSize');
-    
-    if (value && maxSize) {
-      if (!validateSizeValues(value, maxSize, minSizeUnit, maxSizeUnit)) {
-        // Reset the min size (the violating value) and remove from filtering
-        setMinSize('');
-        showValidationError('Minimum size cannot exceed maximum size');
-        return;
-      }
-    }
   };
 
-  // Handle max size change with validation
   const handleMaxSizeChange = (value: string) => {
     setMaxSize(value);
-    // setLastChangedField('maxSize');
-    
-    if (value && minSize) {
-      if (!validateSizeValues(minSize, value, minSizeUnit, maxSizeUnit)) {
-        // Reset the max size (the violating value) and remove from filtering
-        setMaxSize('');
-        showValidationError('Maximum size cannot be less than minimum size');
-        return;
-      }
-    }
   };
 
-  // Handle min size unit change with validation
   const handleMinSizeUnitChange = (unit: string) => {
     setMinSizeUnit(unit);
-    // setLastChangedField('minSize');
-    
-    if (minSize && maxSize) {
-      if (!validateSizeValues(minSize, maxSize, unit, maxSizeUnit)) {
-        // Reset the min size (the violating value) and remove from filtering
-        setMinSize('');
-        setMinSizeUnit('bytes');
-        showValidationError('Minimum size cannot exceed maximum size');
-        return;
-      }
-    }
   };
 
-  // Handle max size unit change with validation
   const handleMaxSizeUnitChange = (unit: string) => {
     setMaxSizeUnit(unit);
-    // setLastChangedField('maxSize');
-    
-    if (minSize && maxSize) {
-      if (!validateSizeValues(minSize, maxSize, minSizeUnit, unit)) {
-        // Reset the max size (the violating value) and remove from filtering
-        setMaxSize('');
-        setMaxSizeUnit('bytes');
-        showValidationError('Maximum size cannot be less than minimum size');
-        return;
-      }
-    }
   };
 
-  // Handle date from change with validation
   const handleDateFromChange = (value: string) => {
     setDateFrom(value);
-    // setLastChangedField('dateFrom');
-    
-    if (value && dateTo) {
-      if (!validateDateRange(value, dateTo)) {
-        // Reset the from date (the violating value) and remove from filtering
-        setDateFrom('');
-        showValidationError('From date cannot be after to date');
-        return;
-      }
-    }
   };
 
-  // Handle date to change with validation
   const handleDateToChange = (value: string) => {
     setDateTo(value);
-    // setLastChangedField('dateTo');
-    
-    if (value && dateFrom) {
-      if (!validateDateRange(dateFrom, value)) {
-        // Reset the to date (the violating value) and remove from filtering
-        setDateTo('');
-        showValidationError('To date cannot be before from date');
-        return;
-      }
-    }
   };
 
 
 
-  // Update filters when any filter changes (debounced to prevent focus loss)
-  useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      const filters: FileFiltersType = {};
-      
-      if (searchQuery.trim()) filters.q = searchQuery.trim();
-      if (selectedFileTypes.length > 0) filters.file_type = selectedFileTypes.join(',');
-      
-      // Convert sizes to bytes for API
-      const minSizeBytes = convertSizeToBytes(minSize, minSizeUnit);
-      const maxSizeBytes = convertSizeToBytes(maxSize, maxSizeUnit);
-      
-      if (minSizeBytes !== undefined) filters.min_size = minSizeBytes;
-      if (maxSizeBytes !== undefined) filters.max_size = maxSizeBytes;
-      if (dateFrom) filters.date_from = dateFrom;
-      if (dateTo) filters.date_to = dateTo;
+  // Apply filters manually when button is clicked
+  const handleApplyFilters = (): void => {
+    // Validate size range
+    if (minSize && maxSize) {
+      if (!validateSizeValues(minSize, maxSize, minSizeUnit, maxSizeUnit)) {
+        // Reset both size filters if validation fails
+        setMinSize('');
+        setMaxSize('');
+        setMinSizeUnit('bytes');
+        setMaxSizeUnit('bytes');
+        showValidationError('Minimum size cannot exceed maximum size. Both size filters have been reset.');
+        return;
+      }
+    }
 
-      // Update URL
-      const newSearchParams = new URLSearchParams();
-      Object.entries(filters).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== '') {
-          newSearchParams.set(key, value.toString());
-        }
-      });
-      setSearchParams(newSearchParams);
+    // Validate date range
+    if (dateFrom && dateTo) {
+      if (!validateDateRange(dateFrom, dateTo)) {
+        // Reset both date filters if validation fails
+        setDateFrom('');
+        setDateTo('');
+        showValidationError('From date cannot be after to date. Both date filters have been reset.');
+        return;
+      }
+    }
 
-      // Trigger parent callback
-      onFiltersChange(filters);
-    }, 300); // Debounce all changes to prevent focus loss
+    // Build filters object
+    const filters: FileFiltersType = {};
+    
+    if (searchQuery.trim()) filters.q = searchQuery.trim();
+    if (selectedFileTypes.length > 0) filters.file_type = selectedFileTypes.join(',');
+    
+    // Convert sizes to bytes for API
+    const minSizeBytes = convertSizeToBytes(minSize, minSizeUnit);
+    const maxSizeBytes = convertSizeToBytes(maxSize, maxSizeUnit);
+    
+    if (minSizeBytes !== undefined) filters.min_size = minSizeBytes;
+    if (maxSizeBytes !== undefined) filters.max_size = maxSizeBytes;
+    if (dateFrom) filters.date_from = dateFrom;
+    if (dateTo) filters.date_to = dateTo;
 
-    return () => clearTimeout(timeoutId);
-  }, [searchQuery, selectedFileTypes, minSize, maxSize, minSizeUnit, maxSizeUnit, dateFrom, dateTo, onFiltersChange, setSearchParams]);
+    // Update URL
+    const newSearchParams = new URLSearchParams();
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') {
+        newSearchParams.set(key, value.toString());
+      }
+    });
+    setSearchParams(newSearchParams);
+
+    // Trigger parent callback
+    onFiltersChange(filters);
+  };
 
   // Better focus preservation using a more robust approach
   const [focusedInput, setFocusedInput] = useState<string | null>(null);
@@ -308,6 +262,15 @@ export const FileFilters = React.forwardRef<{ clearAllFilters: () => void }, Fil
             )}
           </div>
           <div className="file-filters-actions">
+            <button
+              onClick={handleApplyFilters}
+              className="file-filters-apply-button"
+              disabled={isLoading}
+              aria-label="Apply filters"
+            >
+              <FunnelIcon className="h-4 w-4" aria-hidden="true" />
+              <span>Apply Filter</span>
+            </button>
             {hasActiveFilters && (
               <button
                 onClick={clearAllFilters}
