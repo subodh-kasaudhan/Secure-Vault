@@ -44,7 +44,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onUploadSuccess }) => {
     
     if (file.size > API_CONFIG.MAX_FILE_SIZE) {
       const fileSizeMB = (file.size / (1024 * 1024)).toFixed(1);
-      const errorMessage = `❌ File too large: ${fileSizeMB}MB (max: ${maxSizeMB}MB)`;
+      const errorMessage = `File too large: ${fileSizeMB}MB (max: ${maxSizeMB}MB) ❌`;
       setLocalError(errorMessage);
       // Clear error after 5 seconds
       setTimeout(() => setLocalError(null), 5000);

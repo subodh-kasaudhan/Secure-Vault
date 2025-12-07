@@ -132,11 +132,12 @@ class File(models.Model):
                         # Assume it's already a public_id or use as-is
                         public_id = blob_path
                     
-                    # Generate Cloudinary URL
+                    # Generate Cloudinary URL with proper format
                     url, options = cloudinary_url(
                         public_id,
                         resource_type='auto',
                         secure=True,
+                        format='auto',  # Let Cloudinary optimize
                     )
                     return url
                 except (ImportError, Exception):

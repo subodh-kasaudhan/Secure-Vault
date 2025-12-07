@@ -101,32 +101,63 @@ export const fileService = {
     let objectUrl: string | null = null;
     
     try {
-      // If we have a fileId, use the download endpoint (more reliable for Cloudinary)
+      // If we have a fileId, use the download endpoint (backend proxies the file)
       if (fileId) {
-        try {
-          const response = await axios.get(`${API_URL}${API_ENDPOINTS.FILES}${fileId}/download/`, {
-            timeout: API_CONFIG.TIMEOUT,
-          });
-          
-          if (response.data?.download_url) {
-            // Use the download URL from the endpoint
-            fileUrl = response.data.download_url;
-            filename = response.data.filename || filename;
-          }
-        } catch (endpointError) {
-          // If download endpoint fails, fall back to direct URL
-          console.warn('Download endpoint failed, using direct URL:', endpointError);
+        const response = await axios.get(`${API_URL}${API_ENDPOINTS.FILES}${fileId}/download/`, {
+          responseType: 'blob',
+          timeout: 60000, // 60 second timeout for downloads
+        });
+        
+        // Validate response
+        if (!response.data || response.data.size === 0) {
+          throw new Error('File is empty or invalid');
         }
+        
+        // Get filename from Content-Disposition header if available
+        const contentDisposition = response.headers['content-disposition'];
+        if (contentDisposition) {
+          const filenameMatch = contentDisposition.match(/filename="?([^"]+)"?/);
+          if (filenameMatch) {
+            filename = filenameMatch[1];
+          }
+        }
+        
+        // Create blob with proper MIME type
+        const contentType = response.headers['content-type'] || 'application/octet-stream';
+        const blob = new Blob([response.data], { type: contentType });
+        
+        // Create object URL
+        objectUrl = window.URL.createObjectURL(blob);
+        
+        // Create download link
+        const link = document.createElement('a');
+        link.href = objectUrl;
+        link.download = filename;
+        link.style.display = 'none';
+        
+        // Add to DOM, trigger download, and cleanup
+        document.body.appendChild(link);
+        link.click();
+        
+        // Small delay to ensure download starts before cleanup
+        setTimeout(() => {
+          document.body.removeChild(link);
+          if (objectUrl) {
+            window.URL.revokeObjectURL(objectUrl);
+            objectUrl = null;
+          }
+        }, 100);
+        
+        return; // Success - exit early
       }
       
+      // Fallback: If no fileId, try direct URL (for local development)
       // Construct full URL if it's a relative path
       let fullUrl: string;
       if (fileUrl.startsWith('http')) {
         fullUrl = fileUrl;
       } else {
         // For relative paths, construct the proper URL
-        // The fileUrl should be something like "/media/blobs/..."
-        // We need to use the base URL without the /api suffix
         const baseUrl = API_CONFIG.BASE_URL.replace('/api', '');
         fullUrl = `${baseUrl}${fileUrl}`;
       }
@@ -134,7 +165,6 @@ export const fileService = {
       const response = await axios.get(fullUrl, {
         responseType: 'blob',
         timeout: 30000, // 30 second timeout for downloads
-        
       });
       
       // Validate response

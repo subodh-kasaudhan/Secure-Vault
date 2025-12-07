@@ -245,22 +245,23 @@ class FileViewSet(viewsets.ModelViewSet):
                 
                 # Convert blob path to Cloudinary public_id format
                 # blob_relative_path format: blobs/{hash_prefix}/{hash}
-                # We want: secure-vault/blobs/{hash_prefix}_{hash}
+                # For Cloudinary: we'll use folder='secure-vault/blobs' and public_id={hash_prefix}_{hash}
                 public_id_part = blob_relative_path.replace('blobs/', '').replace('/', '_')
-                public_id = f'secure-vault/blobs/{public_id_part}'
                 
                 # Upload file to Cloudinary
+                # Note: When using folder parameter, the public_id should NOT include the folder
+                # Cloudinary will automatically combine folder + public_id
                 result = cloudinary.uploader.upload(
                     temp_path,
-                    public_id=public_id,  # Use full public_id including folder
+                    folder='secure-vault/blobs',
+                    public_id=public_id_part,  # Just the hash part, folder is separate
                     resource_type='auto',
                     overwrite=False,  # Don't overwrite if exists (deduplication)
                 )
                 
-                # Store the actual Cloudinary public_id in blob.path for URL generation
-                # This ensures we can generate the correct URL later
-                # Format: cloudinary:{public_id} so we know it's from Cloudinary
-                cloudinary_public_id = result.get('public_id', public_id)
+                # Get the actual public_id from Cloudinary response
+                # This will be the full path: secure-vault/blobs/{hash_prefix}_{hash}
+                cloudinary_public_id = result.get('public_id', f'secure-vault/blobs/{public_id_part}')
                 
                 # Clean up temp file
                 cleanup_temp_file(temp_path)
@@ -596,28 +597,59 @@ def download_file(request, file_id):
                     public_id,
                     resource_type='auto',
                     secure=True,
+                    format='auto',
                 )
                 
-                # Return the Cloudinary URL for direct download
-                # Frontend can use this URL directly
-                return Response({
-                    'download_url': url,
-                    'filename': file_record.original_filename,
-                    'size': file_record.size,
-                })
+                # Proxy the file through the backend to avoid CORS and access issues
+                # Fetch the file from Cloudinary and stream it to the client
+                import requests
+                cloudinary_response = requests.get(url, stream=True, timeout=30)
+                cloudinary_response.raise_for_status()
+                
+                # Create a streaming response
+                from django.http import StreamingHttpResponse
+                response = StreamingHttpResponse(
+                    cloudinary_response.iter_content(chunk_size=8192),
+                    content_type=cloudinary_response.headers.get('Content-Type', 'application/octet-stream')
+                )
+                
+                # Set headers for file download
+                response['Content-Disposition'] = f'attachment; filename="{file_record.original_filename}"'
+                response['Content-Length'] = cloudinary_response.headers.get('Content-Length', str(file_record.size))
+                
+                return response
+            except requests.RequestException as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Cloudinary download failed: {e}, public_id: {public_id}, url: {url}")
+                return Response(
+                    {'error': f'Failed to download file from Cloudinary: {str(e)}'}, 
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
             except Exception as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Cloudinary URL generation failed: {e}, blob_path: {blob_path}")
                 return Response(
                     {'error': f'Failed to generate download URL: {str(e)}'}, 
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
         else:
-            # Local storage - return the media URL
-            file_url = f"{settings.MEDIA_URL}{file_record.blob.path}"
-            return Response({
-                'download_url': file_url,
-                'filename': file_record.original_filename,
-                'size': file_record.size,
-            })
+            # Local storage - serve the file directly
+            file_path = os.path.join(settings.MEDIA_ROOT, file_record.blob.path)
+            if not os.path.exists(file_path):
+                return Response({'error': 'File not found on server'}, status=status.HTTP_404_NOT_FOUND)
+            
+            # Open and serve the file
+            from django.http import StreamingHttpResponse
+            file_handle = open(file_path, 'rb')
+            response = StreamingHttpResponse(
+                file_handle,
+                content_type='application/octet-stream'
+            )
+            response['Content-Disposition'] = f'attachment; filename="{file_record.original_filename}"'
+            response['Content-Length'] = file_record.size
+            return response
             
     except Exception as e:
         return Response(
