@@ -153,6 +153,25 @@ export const FileFilters = React.forwardRef<{ clearAllFilters: () => void }, Fil
         setMaxSize('');
         setMinSizeUnit('bytes');
         setMaxSizeUnit('bytes');
+        
+        // Remove size filters from applied filters and update URL/callback
+        const updatedFilters = { ...appliedFilters };
+        delete updatedFilters.min_size;
+        delete updatedFilters.max_size;
+        setAppliedFilters(updatedFilters);
+        
+        // Update URL
+        const newSearchParams = new URLSearchParams();
+        Object.entries(updatedFilters).forEach(([key, value]) => {
+          if (value !== undefined && value !== null && value !== '') {
+            newSearchParams.set(key, value.toString());
+          }
+        });
+        setSearchParams(newSearchParams);
+        
+        // Trigger parent callback to remove filtering effects
+        onFiltersChange(updatedFilters);
+        
         showValidationError('Minimum size cannot exceed maximum size. Both size filters have been reset.');
         return;
       }
@@ -164,6 +183,25 @@ export const FileFilters = React.forwardRef<{ clearAllFilters: () => void }, Fil
         // Reset both date filters if validation fails
         setDateFrom('');
         setDateTo('');
+        
+        // Remove date filters from applied filters and update URL/callback
+        const updatedFilters = { ...appliedFilters };
+        delete updatedFilters.date_from;
+        delete updatedFilters.date_to;
+        setAppliedFilters(updatedFilters);
+        
+        // Update URL
+        const newSearchParams = new URLSearchParams();
+        Object.entries(updatedFilters).forEach(([key, value]) => {
+          if (value !== undefined && value !== null && value !== '') {
+            newSearchParams.set(key, value.toString());
+          }
+        });
+        setSearchParams(newSearchParams);
+        
+        // Trigger parent callback to remove filtering effects
+        onFiltersChange(updatedFilters);
+        
         showValidationError('From date cannot be after to date. Both date filters have been reset.');
         return;
       }
