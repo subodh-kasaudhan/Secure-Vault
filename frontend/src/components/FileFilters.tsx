@@ -56,6 +56,19 @@ export const FileFilters = React.forwardRef<{ clearAllFilters: () => void }, Fil
   const [dateFrom, setDateFrom] = useState<string>(searchParams.get('date_from') || '');
   const [dateTo, setDateTo] = useState<string>(searchParams.get('date_to') || '');
 
+  // Track applied filters (for legend display)
+  const [appliedFilters, setAppliedFilters] = useState<FileFiltersType>(() => {
+    // Initialize from URL params if they exist
+    const params: FileFiltersType = {};
+    if (searchParams.get('q')) params.q = searchParams.get('q') || '';
+    if (searchParams.get('file_type')) params.file_type = searchParams.get('file_type') || '';
+    if (searchParams.get('min_size')) params.min_size = parseInt(searchParams.get('min_size') || '0');
+    if (searchParams.get('max_size')) params.max_size = parseInt(searchParams.get('max_size') || '0');
+    if (searchParams.get('date_from')) params.date_from = searchParams.get('date_from') || '';
+    if (searchParams.get('date_to')) params.date_to = searchParams.get('date_to') || '';
+    return params;
+  });
+
   // Track last changed field for validation
   const [validationError, setValidationError] = useState<string | null>(null);
 
@@ -180,6 +193,9 @@ export const FileFilters = React.forwardRef<{ clearAllFilters: () => void }, Fil
     });
     setSearchParams(newSearchParams);
 
+    // Store applied filters for legend display
+    setAppliedFilters(filters);
+
     // Trigger parent callback
     onFiltersChange(filters);
   };
@@ -215,6 +231,7 @@ export const FileFilters = React.forwardRef<{ clearAllFilters: () => void }, Fil
     setMaxSizeUnit('bytes');
     setDateFrom('');
     setDateTo('');
+    setAppliedFilters({});
     setSearchParams(new URLSearchParams());
     
     // Notify parent component that filters were cleared
@@ -223,12 +240,62 @@ export const FileFilters = React.forwardRef<{ clearAllFilters: () => void }, Fil
     }
   };
 
+  // Remove a specific filter and re-apply remaining filters
+  const removeFilter = (filterType: string): void => {
+    let updatedFilters: FileFiltersType = { ...appliedFilters };
+    
+    switch (filterType) {
+      case 'search':
+        delete updatedFilters.q;
+        setSearchQuery('');
+        break;
+      case 'file_type':
+        delete updatedFilters.file_type;
+        setSelectedFileTypes([]);
+        break;
+      case 'min_size':
+        delete updatedFilters.min_size;
+        setMinSize('');
+        break;
+      case 'max_size':
+        delete updatedFilters.max_size;
+        setMaxSize('');
+        break;
+      case 'date_from':
+        delete updatedFilters.date_from;
+        setDateFrom('');
+        break;
+      case 'date_to':
+        delete updatedFilters.date_to;
+        setDateTo('');
+        break;
+    }
+    
+    // Update applied filters
+    setAppliedFilters(updatedFilters);
+    
+    // Update URL
+    const newSearchParams = new URLSearchParams();
+    Object.entries(updatedFilters).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') {
+        newSearchParams.set(key, value.toString());
+      }
+    });
+    setSearchParams(newSearchParams);
+    
+    // Trigger parent callback with updated filters
+    onFiltersChange(updatedFilters);
+  };
+
   // Expose clearAllFilters method to parent component
   useImperativeHandle(ref, () => ({
     clearAllFilters
   }));
 
-  const hasActiveFilters: boolean = !!(searchQuery || selectedFileTypes.length > 0 || minSize || maxSize || dateFrom || dateTo);
+  // Check if there are applied filters (for legend display and header badge)
+  const hasAppliedFilters: boolean = !!(appliedFilters.q || appliedFilters.file_type || 
+    appliedFilters.min_size || appliedFilters.max_size || 
+    appliedFilters.date_from || appliedFilters.date_to);
 
   return (
     <div className="file-filters-container">
@@ -255,7 +322,7 @@ export const FileFilters = React.forwardRef<{ clearAllFilters: () => void }, Fil
           <div className="file-filters-title-section">
             <FunnelIcon className="h-5 w-5 text-gray-500" aria-hidden="true" />
             <h3 className="file-filters-title">Filters</h3>
-            {hasActiveFilters && (
+            {hasAppliedFilters && (
               <span className="file-filters-active-badge" aria-label="Filters are active">
                 Active
               </span>
@@ -271,7 +338,7 @@ export const FileFilters = React.forwardRef<{ clearAllFilters: () => void }, Fil
               <FunnelIcon className="h-4 w-4" aria-hidden="true" />
               <span>Apply Filter</span>
             </button>
-            {hasActiveFilters && (
+            {hasAppliedFilters && (
               <button
                 onClick={clearAllFilters}
                 className="file-filters-clear-button"
@@ -431,83 +498,131 @@ export const FileFilters = React.forwardRef<{ clearAllFilters: () => void }, Fil
         </div>
       
 
-      {/* Active Filters Summary */}
-      {hasActiveFilters && (
+      {/* Active Filters Summary - Only show applied filters */}
+      {hasAppliedFilters && (
         <div className="file-filters-summary">
           <div className="file-filters-summary-container">
-            {searchQuery && (
+            {appliedFilters.q && (
               <span className="file-filters-summary-item file-filters-summary-search">
-                Search: "{searchQuery}"
+                Search: "{appliedFilters.q}"
                 <button
-                  onClick={() => setSearchQuery('')}
+                  onClick={() => removeFilter('search')}
                   className="file-filters-summary-remove"
+                  aria-label="Remove search filter"
                 >
                   <XMarkIcon className="h-3 w-3" />
                 </button>
               </span>
             )}
-            {selectedFileTypes.map(type => (
+            {appliedFilters.file_type && appliedFilters.file_type.split(',').map(type => (
               <span key={type} className="file-filters-summary-item file-filters-summary-type">
                 {FILE_TYPE_OPTIONS.find(opt => opt.value === type)?.label}
                 <button
-                  onClick={() => handleFileTypeToggle(type)}
+                  onClick={() => {
+                    // Remove this file type from applied filters
+                    const currentTypes = appliedFilters.file_type?.split(',').filter(Boolean) || [];
+                    const updatedTypes = currentTypes.filter(t => t !== type);
+                    if (updatedTypes.length === 0) {
+                      removeFilter('file_type');
+                    } else {
+                      const updatedFilters = { ...appliedFilters };
+                      updatedFilters.file_type = updatedTypes.join(',');
+                      setAppliedFilters(updatedFilters);
+                      setSelectedFileTypes(updatedTypes);
+                      
+                      // Update URL and trigger callback
+                      const newSearchParams = new URLSearchParams();
+                      Object.entries(updatedFilters).forEach(([key, value]) => {
+                        if (value !== undefined && value !== null && value !== '') {
+                          newSearchParams.set(key, value.toString());
+                        }
+                      });
+                      setSearchParams(newSearchParams);
+                      onFiltersChange(updatedFilters);
+                    }
+                  }}
                   className="file-filters-summary-remove"
+                  aria-label={`Remove ${type} filter`}
                 >
                   <XMarkIcon className="h-3 w-3" />
                 </button>
               </span>
             ))}
-            {minSize && (
+            {appliedFilters.min_size !== undefined && (
               <span className="file-filters-summary-item file-filters-summary-size">
-                Min: {minSize} {SIZE_OPTIONS.find(opt => opt.value === minSizeUnit)?.label}
+                Min: {(() => {
+                  const bytes = appliedFilters.min_size || 0;
+                  if (bytes >= 1024 * 1024 * 1024) {
+                    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+                  } else if (bytes >= 1024 * 1024) {
+                    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+                  } else if (bytes >= 1024) {
+                    return `${(bytes / 1024).toFixed(2)} KB`;
+                  }
+                  return `${bytes} Bytes`;
+                })()}
                 <button
-                  onClick={() => setMinSize('')}
+                  onClick={() => removeFilter('min_size')}
                   className="file-filters-summary-remove"
+                  aria-label="Remove minimum size filter"
                 >
                   <XMarkIcon className="h-3 w-3" />
                 </button>
               </span>
             )}
-            {maxSize && (
+            {appliedFilters.max_size !== undefined && (
               <span className="file-filters-summary-item file-filters-summary-size">
-                Max: {maxSize} {SIZE_OPTIONS.find(opt => opt.value === maxSizeUnit)?.label}
+                Max: {(() => {
+                  const bytes = appliedFilters.max_size || 0;
+                  if (bytes >= 1024 * 1024 * 1024) {
+                    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+                  } else if (bytes >= 1024 * 1024) {
+                    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+                  } else if (bytes >= 1024) {
+                    return `${(bytes / 1024).toFixed(2)} KB`;
+                  }
+                  return `${bytes} Bytes`;
+                })()}
                 <button
-                  onClick={() => setMaxSize('')}
+                  onClick={() => removeFilter('max_size')}
                   className="file-filters-summary-remove"
+                  aria-label="Remove maximum size filter"
                 >
                   <XMarkIcon className="h-3 w-3" />
                 </button>
               </span>
             )}
-            {dateFrom && (
+            {appliedFilters.date_from && (
               <span className="file-filters-summary-item file-filters-summary-date">
                 From: {(() => {
-                  const d = new Date(dateFrom);
+                  const d = new Date(appliedFilters.date_from);
                   const day = String(d.getDate()).padStart(2, '0');
                   const month = String(d.getMonth() + 1).padStart(2, '0');
                   const year = d.getFullYear();
                   return `${day}/${month}/${year}`;
                 })()}
                 <button
-                  onClick={() => setDateFrom('')}
+                  onClick={() => removeFilter('date_from')}
                   className="file-filters-summary-remove"
+                  aria-label="Remove from date filter"
                 >
                   <XMarkIcon className="h-3 w-3" />
                 </button>
               </span>
             )}
-            {dateTo && (
+            {appliedFilters.date_to && (
               <span className="file-filters-summary-item file-filters-summary-date">
                 To: {(() => {
-                  const d = new Date(dateTo);
+                  const d = new Date(appliedFilters.date_to);
                   const day = String(d.getDate()).padStart(2, '0');
                   const month = String(d.getMonth() + 1).padStart(2, '0');
                   const year = d.getFullYear();
                   return `${day}/${month}/${year}`;
                 })()}
                 <button
-                  onClick={() => setDateTo('')}
+                  onClick={() => removeFilter('date_to')}
                   className="file-filters-summary-remove"
+                  aria-label="Remove to date filter"
                 >
                   <XMarkIcon className="h-3 w-3" />
                 </button>
