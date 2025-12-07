@@ -50,8 +50,8 @@ export const useFiles = (filters?: FileFilters) => {
   });
 
   // Mutation for downloading files
-  const downloadMutation = useMutation<void, ApiError, { fileUrl: string; filename: string }>({
-    mutationFn: ({ fileUrl, filename }) => fileService.downloadFile(fileUrl, filename),
+  const downloadMutation = useMutation<void, ApiError, { fileUrl: string; filename: string; fileId?: string }>({
+    mutationFn: ({ fileUrl, filename, fileId }) => fileService.downloadFile(fileUrl, filename, fileId),
   });
 
   // Mutation for removing duplicates

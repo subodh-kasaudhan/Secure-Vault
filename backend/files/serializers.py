@@ -46,24 +46,32 @@ class FileSerializer(serializers.ModelSerializer):
                     import cloudinary
                     from cloudinary.utils import cloudinary_url
                     
-                    # The blob.path format: blobs/{hash_prefix}/{hash}
-                    # Convert to Cloudinary public_id: secure-vault/blobs/{hash_prefix}_{hash}
                     blob_path = obj.blob.path
-                    if blob_path.startswith('blobs/'):
-                        # Remove 'blobs/' prefix and replace / with _
-                        public_id = blob_path.replace('blobs/', '').replace('/', '_')
-                        # Add folder prefix
-                        public_id = f'secure-vault/blobs/{public_id}'
-                        
-                        # Generate Cloudinary URL
-                        url, options = cloudinary_url(
-                            public_id,
-                            resource_type='auto',
-                            secure=True,
-                        )
-                        return url
+                    
+                    # Check if path is already a Cloudinary public_id (starts with 'secure-vault/')
+                    if blob_path.startswith('secure-vault/'):
+                        # Already a Cloudinary public_id
+                        public_id = blob_path
+                    elif blob_path.startswith('blobs/'):
+                        # Old format - convert to Cloudinary public_id
+                        public_id_part = blob_path.replace('blobs/', '').replace('/', '_')
+                        public_id = f'secure-vault/blobs/{public_id_part}'
+                    else:
+                        # Assume it's already a public_id or use as-is
+                        public_id = blob_path
+                    
+                    # Generate Cloudinary URL
+                    url, options = cloudinary_url(
+                        public_id,
+                        resource_type='auto',
+                        secure=True,
+                    )
+                    return url
                 except (ImportError, Exception) as e:
                     # Fallback to local URL if Cloudinary fails
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(f"Failed to generate Cloudinary URL: {e}")
                     pass
             
             # Local storage (development)

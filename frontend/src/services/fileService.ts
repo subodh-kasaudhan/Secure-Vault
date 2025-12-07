@@ -97,10 +97,28 @@ export const fileService = {
     }
   },
 
-  async downloadFile(fileUrl: string, filename: string): Promise<void> {
+  async downloadFile(fileUrl: string, filename: string, fileId?: string): Promise<void> {
     let objectUrl: string | null = null;
     
     try {
+      // If we have a fileId, use the download endpoint (more reliable for Cloudinary)
+      if (fileId) {
+        try {
+          const response = await axios.get(`${API_URL}${API_ENDPOINTS.FILES}${fileId}/download/`, {
+            timeout: API_CONFIG.TIMEOUT,
+          });
+          
+          if (response.data?.download_url) {
+            // Use the download URL from the endpoint
+            fileUrl = response.data.download_url;
+            filename = response.data.filename || filename;
+          }
+        } catch (endpointError) {
+          // If download endpoint fails, fall back to direct URL
+          console.warn('Download endpoint failed, using direct URL:', endpointError);
+        }
+      }
+      
       // Construct full URL if it's a relative path
       let fullUrl: string;
       if (fileUrl.startsWith('http')) {

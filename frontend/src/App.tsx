@@ -41,8 +41,8 @@ function AppContent(): React.JSX.Element {
     setCurrentFilters(newFilters);
   };
 
-  const handleDownload = (fileUrl: string, filename: string): Promise<void> => {
-    return downloadFile({ fileUrl, filename });
+  const handleDownload = (fileUrl: string, filename: string, fileId?: string): Promise<void> => {
+    return downloadFile({ fileUrl, filename, fileId });
   };
 
   const handleRemoveDuplicates = async (): Promise<void> => {

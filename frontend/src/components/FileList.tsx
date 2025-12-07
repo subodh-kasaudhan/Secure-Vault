@@ -19,7 +19,7 @@ interface FileListProps {
   isLoading?: boolean;
   error?: FileListError | null;
   onDelete?: (id: string) => Promise<void>;
-  onDownload?: (fileUrl: string, filename: string) => Promise<void>;
+  onDownload?: (fileUrl: string, filename: string, fileId?: string) => Promise<void>;
   onPageChange?: (page: number) => void;
   isDeleting?: boolean;
   isDownloading?: boolean;
@@ -63,7 +63,7 @@ export const FileList: React.FC<FileListProps> = ({
       try {
         setDownloadError(null);
         setDownloadingFile(fileId);
-        await onDownload(fileUrl, filename);
+        await onDownload(fileUrl, filename, fileId);
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : 'Failed to download file. Please try again.';
         setDownloadError(errorMessage);
