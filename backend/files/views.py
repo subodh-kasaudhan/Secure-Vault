@@ -641,13 +641,13 @@ def download_file(request, file_id):
                     try:
                         logger.info(f"Trying resource_type={rt} for file {file_record.original_filename}")
                         
-                        # Generate SIGNED URL for authenticated access
+                        # Generate signed URL for upload type assets
                         url, options = cloudinary_url(
                             public_id,
                             resource_type=rt,
                             secure=True,
-                            sign_url=True,  # This generates an authenticated URL
-                            type='authenticated',  # For restricted assets
+                            sign_url=True,  # Sign the URL for access
+                            # Don't specify type - defaults to 'upload' which matches how files were uploaded
                         )
                         logger.info(f"Generated Cloudinary URL: {url}")
                         
