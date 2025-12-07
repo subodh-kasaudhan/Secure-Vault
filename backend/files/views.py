@@ -5,6 +5,7 @@ import shutil
 import logging
 import requests
 from datetime import datetime
+from urllib.parse import quote
 from django.shortcuts import render
 from django.conf import settings
 from django.db import transaction, models
@@ -582,7 +583,6 @@ def download_file(request, file_id):
         if 'CLOUDINARY_URL' in os.environ or getattr(settings, 'DEFAULT_FILE_STORAGE', '').endswith('MediaCloudinaryStorage'):
             blob_path = file_record.blob.path
             public_id = None
-            url = None
             
             try:
                 import cloudinary
@@ -597,40 +597,78 @@ def download_file(request, file_id):
                 else:
                     public_id = blob_path
                 
-                # Generate Cloudinary URL
-                url, options = cloudinary_url(
-                    public_id,
-                    resource_type='auto',
-                    secure=True,
-                    format='auto',
-                )
+                logger.info(f"Downloading file: public_id={public_id}, blob_path={blob_path}")
                 
-                # Proxy the file through the backend to avoid CORS and access issues
-                # Fetch the file from Cloudinary and stream it to the client
-                cloudinary_response = requests.get(url, stream=True, timeout=30)
-                cloudinary_response.raise_for_status()
-                
-                # Create a streaming response
-                response = StreamingHttpResponse(
-                    cloudinary_response.iter_content(chunk_size=8192),
-                    content_type=cloudinary_response.headers.get('Content-Type', 'application/octet-stream')
-                )
-                
-                # Set headers for file download
-                response['Content-Disposition'] = f'attachment; filename="{file_record.original_filename}"'
-                response['Content-Length'] = cloudinary_response.headers.get('Content-Length', str(file_record.size))
-                
-                return response
+                # Try method 1: Use Cloudinary URL with raw resource type for direct download
+                # This works better for non-image files
+                try:
+                    url, options = cloudinary_url(
+                        public_id,
+                        resource_type='raw',  # Use 'raw' for direct file download
+                        secure=True,
+                    )
+                    logger.info(f"Generated Cloudinary URL: {url}")
+                    
+                    # Fetch the file from Cloudinary
+                    cloudinary_response = requests.get(url, stream=True, timeout=30)
+                    cloudinary_response.raise_for_status()
+                    
+                    # Create a streaming response
+                    response = StreamingHttpResponse(
+                        cloudinary_response.iter_content(chunk_size=8192),
+                        content_type=cloudinary_response.headers.get('Content-Type', 'application/octet-stream')
+                    )
+                    
+                    # Set headers for file download
+                    # Properly encode filename for Content-Disposition header
+                    filename_encoded = quote(file_record.original_filename.encode('utf-8'))
+                    response['Content-Disposition'] = f'attachment; filename*=UTF-8\'\'{filename_encoded}'
+                    content_length = cloudinary_response.headers.get('Content-Length')
+                    if content_length:
+                        response['Content-Length'] = content_length
+                    else:
+                        response['Content-Length'] = str(file_record.size)
+                    
+                    return response
+                except requests.RequestException as e:
+                    logger.warning(f"Raw resource type failed, trying auto: {e}")
+                    # Fallback: Try with 'auto' resource type
+                    url, options = cloudinary_url(
+                        public_id,
+                        resource_type='auto',
+                        secure=True,
+                        format='auto',
+                    )
+                    
+                    cloudinary_response = requests.get(url, stream=True, timeout=30)
+                    cloudinary_response.raise_for_status()
+                    
+                    response = StreamingHttpResponse(
+                        cloudinary_response.iter_content(chunk_size=8192),
+                        content_type=cloudinary_response.headers.get('Content-Type', 'application/octet-stream')
+                    )
+                    
+                    # Properly encode filename for Content-Disposition header
+                    filename_encoded = quote(file_record.original_filename.encode('utf-8'))
+                    response['Content-Disposition'] = f'attachment; filename*=UTF-8\'\'{filename_encoded}'
+                    content_length = cloudinary_response.headers.get('Content-Length')
+                    if content_length:
+                        response['Content-Length'] = content_length
+                    else:
+                        response['Content-Length'] = str(file_record.size)
+                    
+                    return response
+                    
             except requests.RequestException as e:
-                logger.error(f"Cloudinary download failed: {e}, public_id: {public_id}, url: {url}")
+                logger.error(f"Cloudinary download failed: {e}, public_id: {public_id}, blob_path: {blob_path}", exc_info=True)
                 return Response(
                     {'error': f'Failed to download file from Cloudinary: {str(e)}'}, 
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
             except Exception as e:
-                logger.error(f"Cloudinary URL generation failed: {e}, blob_path: {blob_path}, public_id: {public_id}")
+                logger.error(f"Cloudinary download error: {e}, blob_path: {blob_path}, public_id: {public_id}", exc_info=True)
                 return Response(
-                    {'error': f'Failed to generate download URL: {str(e)}'}, 
+                    {'error': f'Failed to process download: {str(e)}'}, 
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
         else:
