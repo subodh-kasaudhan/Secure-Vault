@@ -637,19 +637,34 @@ def download_file(request, file_id):
                 #     resource_types_to_try.append('raw')
                 
                 last_error = None
+                last_error_msg = None
+                
                 for rt in resource_types_to_try:
                     try:
                         logger.info(f"Trying resource_type={rt} for file {file_record.original_filename}")
                         
-                        # Generate signed URL for upload type assets
-                        url, options = cloudinary_url(
-                            public_id,
-                            resource_type=rt,
-                            secure=True,
-                            sign_url=True,  # Sign the URL for access
-                            # Don't specify type - defaults to 'upload' which matches how files were uploaded
-                        )
-                        logger.info(f"Generated Cloudinary URL: {url}")
+                        # Use cloudinary.api to get the resource details and a fresh URL
+                        try:
+                            import cloudinary.api
+                            # Get resource info which includes a secure_url
+                            resource_info = cloudinary.api.resource(
+                                public_id,
+                                resource_type=rt,
+                            )
+                            url = resource_info.get('secure_url')
+                            logger.info(f"Got URL from Cloudinary API: {url}")
+                        except cloudinary.api.NotFound:
+                            logger.warning(f"Resource not found as {rt}: {public_id}")
+                            continue
+                        except Exception as api_error:
+                            logger.warning(f"Cloudinary API error for {rt}: {api_error}")
+                            # Fallback to URL generation
+                            url, options = cloudinary_url(
+                                public_id,
+                                resource_type=rt,
+                                secure=True,
+                            )
+                            logger.info(f"Fallback URL: {url}")
                         
                         # Fetch the file from Cloudinary
                         cloudinary_response = requests.get(url, stream=True, timeout=30)
@@ -674,9 +689,16 @@ def download_file(request, file_id):
                         
                         logger.info(f"Successfully downloaded file using resource_type={rt}")
                         return response
+                        
                     except requests.RequestException as e:
                         last_error = e
-                        logger.warning(f"Resource type '{rt}' failed for {file_record.original_filename}: {e}")
+                        last_error_msg = f"Resource type '{rt}' failed: {e}"
+                        logger.warning(last_error_msg)
+                        continue
+                    except Exception as e:
+                        last_error = e
+                        last_error_msg = f"Resource type '{rt}' error: {e}"
+                        logger.warning(last_error_msg)
                         continue
                 
                 # If all resource types failed, raise the last error
