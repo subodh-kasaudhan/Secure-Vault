@@ -597,67 +597,77 @@ def download_file(request, file_id):
                 else:
                     public_id = blob_path
                 
-                logger.info(f"Downloading file: public_id={public_id}, blob_path={blob_path}")
+                logger.info(f"Downloading file: public_id={public_id}, blob_path={blob_path}, file_type={file_record.file_type}, extension={file_record.extension}")
                 
-                # Try method 1: Use Cloudinary URL with raw resource type for direct download
-                # This works better for non-image files
-                try:
-                    url, options = cloudinary_url(
-                        public_id,
-                        resource_type='raw',  # Use 'raw' for direct file download
-                        secure=True,
-                    )
-                    logger.info(f"Generated Cloudinary URL: {url}")
-                    
-                    # Fetch the file from Cloudinary
-                    cloudinary_response = requests.get(url, stream=True, timeout=30)
-                    cloudinary_response.raise_for_status()
-                    
-                    # Create a streaming response
-                    response = StreamingHttpResponse(
-                        cloudinary_response.iter_content(chunk_size=8192),
-                        content_type=cloudinary_response.headers.get('Content-Type', 'application/octet-stream')
-                    )
-                    
-                    # Set headers for file download
-                    # Properly encode filename for Content-Disposition header
-                    filename_encoded = quote(file_record.original_filename.encode('utf-8'))
-                    response['Content-Disposition'] = f'attachment; filename*=UTF-8\'\'{filename_encoded}'
-                    content_length = cloudinary_response.headers.get('Content-Length')
-                    if content_length:
-                        response['Content-Length'] = content_length
-                    else:
-                        response['Content-Length'] = str(file_record.size)
-                    
-                    return response
-                except requests.RequestException as e:
-                    logger.warning(f"Raw resource type failed, trying auto: {e}")
-                    # Fallback: Try with 'auto' resource type
-                    url, options = cloudinary_url(
-                        public_id,
-                        resource_type='auto',
-                        secure=True,
-                        format='auto',
-                    )
-                    
-                    cloudinary_response = requests.get(url, stream=True, timeout=30)
-                    cloudinary_response.raise_for_status()
-                    
-                    response = StreamingHttpResponse(
-                        cloudinary_response.iter_content(chunk_size=8192),
-                        content_type=cloudinary_response.headers.get('Content-Type', 'application/octet-stream')
-                    )
-                    
-                    # Properly encode filename for Content-Disposition header
-                    filename_encoded = quote(file_record.original_filename.encode('utf-8'))
-                    response['Content-Disposition'] = f'attachment; filename*=UTF-8\'\'{filename_encoded}'
-                    content_length = cloudinary_response.headers.get('Content-Length')
-                    if content_length:
-                        response['Content-Length'] = content_length
-                    else:
-                        response['Content-Length'] = str(file_record.size)
-                    
-                    return response
+                # Determine resource type based on file MIME type or extension
+                # Images should use 'image', documents should use 'raw', PDFs can be either
+                resource_type = 'auto'  # Default fallback
+                file_mime = file_record.file_type.lower() if file_record.file_type else ''
+                file_ext = file_record.extension.lower() if file_record.extension else ''
+                
+                # Determine resource type
+                if file_mime.startswith('image/') or file_ext in ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg', 'webp', 'tiff', 'ico']:
+                    resource_type = 'image'
+                elif file_mime == 'application/pdf' or file_ext == 'pdf':
+                    # PDFs can be stored as 'image' or 'raw' in Cloudinary, try both
+                    resource_type = 'image'  # Try image first for PDFs
+                else:
+                    # Documents, text files, etc. use 'raw'
+                    resource_type = 'raw'
+                
+                # Try resource types in order: determined type -> auto -> image -> raw
+                resource_types_to_try = [resource_type]
+                if resource_type != 'auto':
+                    resource_types_to_try.append('auto')
+                if resource_type not in ['image', 'auto']:
+                    resource_types_to_try.append('image')
+                if resource_type != 'raw':
+                    resource_types_to_try.append('raw')
+                
+                last_error = None
+                for rt in resource_types_to_try:
+                    try:
+                        logger.info(f"Trying resource_type={rt} for file {file_record.original_filename}")
+                        url, options = cloudinary_url(
+                            public_id,
+                            resource_type=rt,
+                            secure=True,
+                            format='auto' if rt == 'auto' else None,
+                        )
+                        logger.info(f"Generated Cloudinary URL: {url}")
+                        
+                        # Fetch the file from Cloudinary
+                        cloudinary_response = requests.get(url, stream=True, timeout=30)
+                        cloudinary_response.raise_for_status()
+                        
+                        # Create a streaming response
+                        response = StreamingHttpResponse(
+                            cloudinary_response.iter_content(chunk_size=8192),
+                            content_type=cloudinary_response.headers.get('Content-Type', file_record.file_type or 'application/octet-stream')
+                        )
+                        
+                        # Set headers for file download
+                        # Properly encode filename for Content-Disposition header
+                        filename_encoded = quote(file_record.original_filename.encode('utf-8'))
+                        response['Content-Disposition'] = f'attachment; filename*=UTF-8\'\'{filename_encoded}'
+                        content_length = cloudinary_response.headers.get('Content-Length')
+                        if content_length:
+                            response['Content-Length'] = content_length
+                        else:
+                            response['Content-Length'] = str(file_record.size)
+                        
+                        logger.info(f"Successfully downloaded file using resource_type={rt}")
+                        return response
+                    except requests.RequestException as e:
+                        last_error = e
+                        logger.warning(f"Resource type '{rt}' failed for {file_record.original_filename}: {e}")
+                        continue
+                
+                # If all resource types failed, raise the last error
+                if last_error:
+                    raise last_error
+                else:
+                    raise Exception("Failed to determine correct resource type")
                     
             except requests.RequestException as e:
                 logger.error(f"Cloudinary download failed: {e}, public_id: {public_id}, blob_path: {blob_path}", exc_info=True)
